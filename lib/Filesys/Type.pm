@@ -5,17 +5,13 @@ use strict;
 BEGIN {
 	use Exporter ();
 	use vars qw ($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-	$VERSION     = 0.01;
+	$VERSION     = 0.02;
 	@ISA         = qw (Exporter);
 	#Give a hoot don't pollute, do not export more than needed by default
 	@EXPORT      = qw ();
-	@EXPORT_OK   = qw (fstype case);
-	%EXPORT_TAGS = (all => [qw(fstype case)]);
+	@EXPORT_OK   = qw (fstype case diagnose);
+	%EXPORT_TAGS = (all => [qw(fstype case diagnose)]);
 }
-
-
-########################################### main pod documentation begin ##
-# Below is the stub of documentation for your module. You better edit it!
 
 
 =head1 NAME
@@ -48,8 +44,9 @@ Note that the exact string returned is operating system dependent.
 
 =head2 case
 
-This is another exportable function that takes a path as input, and
-returns one of the following:
+This is another exportable function that returns the case sensitivity
+of a file system. It either takes a file system type as returned by
+fstype, or a path as input. It returns one of the following:
 
 =over 4
 
@@ -70,6 +67,23 @@ The file names are case insensitive, i.e. foo, Foo and FOO refer to the
 same file, but the initial case of the letters of the file name is
 preserved from the time it was created.
 
+=back
+
+=head2 C<diagnose>
+
+Use this to determine what went wrong if fstype returned undef. Returns
+a string suitable for printing in a log or on stderr.
+
+=head1 SECURITY
+
+Note that some platforms use backtick shell commands to derive information
+about the file systems. Be careful that a rogue user could execute 
+operating system commands by injecting into the path.
+
+It is recommended only to pass in untainted strings. See perldoc perlsec
+for details of running in taint mode, and for a description of how to untaint
+a string passed in from outside.
+
 =head1 BUGS
 
 Please report bugs to http://rt.cpan.org. Post to bug-filesys-type@rt.cpan.org
@@ -80,6 +94,9 @@ Please report bugs to http://rt.cpan.org. Post to bug-filesys-type@rt.cpan.org
 0.01 Sun Jun 12 2005
 	- original version; created by ExtUtils::ModuleMaker 0.32
 
+0.02 Fri Jul 08 2005
+	- Change plugins to be OO. Add diagnostic facility to see 
+	  more about failing tests on some platforms.
 
 =head1 AUTHOR
 
@@ -101,20 +118,13 @@ L<Win32>.
 
 =cut
 
-use Module::Pluggable require => 1;
+use Module::Pluggable instantiate => 'new';
+our ($plugin) = grep {defined $_} __PACKAGE__->plugins;
+warn "failed to detect suitable Filesys::Type::Plugin"
+	unless defined $plugin;
 
 sub fstype {
-    my $path = shift;
-
-    my @plugins = __PACKAGE__->plugins;
-
-    for (@plugins) {
-	my $plugfunc = "${_}::fstype";
-	no strict 'refs';
-	my $rv = &$plugfunc($path);
-	return $rv if $rv;
-    }
-    undef;
+	$plugin->fstype(shift);
 }
 
 our %case_sensitivity = (
@@ -140,11 +150,16 @@ our %case_sensitivity = (
 	);
 
 sub case {
-    my $path = shift;
+    my $fs = shift;
 
-    my $fstype = fstype($path);
+    return $case_sensitivity{$fs} if exists $case_sensitivity{$fs};
+    $fs = fstype($fs);
 
-    $case_sensitivity{$fstype};
+    $case_sensitivity{$fs};
+}
+
+sub diagnose {
+    $plugin->diagnose;
 }
 
 1; #this line is important and will help the module return a true value
